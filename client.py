@@ -1,4 +1,4 @@
-"""Desktop whiteboard client. Tk owns the UI; a worker owns the socket."""
+"""Whiteboard window and client connection."""
 import json
 from pathlib import Path
 import queue
@@ -14,9 +14,9 @@ from protocol import pack, receive
 class Client:
     def __init__(self, root):
         self.root = root
-        root.title("LAN Whiteboard | CN Lab")
+        root.title("LAN Whiteboard")
         root.geometry("1240x800")
-        root.minsize(900, 600)
+        root.minsize(1080, 650)
         self.inbox, self.outbox = queue.Queue(), queue.Queue(512)
         self.stop_event = threading.Event()
         self.connected = False
@@ -26,7 +26,7 @@ class Client:
         self.seq, self.uid = 0, None
         self.color = "#1e3a5f"
         self.tool, self.width = tk.StringVar(value="pen"), tk.IntVar(value=3)
-        self.status = tk.StringVar(value="Enter the server LAN address and room details.")
+        self.status = tk.StringVar(value="Enter the server address, room and your name to join.")
         self.tokens_path = Path.home() / ".cn_whiteboard_tokens.json"
         try:
             self.tokens = json.loads(self.tokens_path.read_text(encoding="utf-8"))
@@ -40,9 +40,13 @@ class Client:
 
     def build(self):
         style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TButton", padding=(8, 5))
+        style.theme_use("vista" if "vista" in style.theme_names() else "clam")
+        style.configure("TButton", padding=(8, 4))
         style.configure("TLabel", font=("Segoe UI", 10))
+        header = ttk.Frame(self.root, padding=(12, 10, 12, 0))
+        header.pack(fill="x")
+        ttk.Label(header, text="LAN Whiteboard", font=("Segoe UI", 16, "bold")).pack(side="left")
+        ttk.Label(header, text="Computer Networks Lab").pack(side="right")
         bar = ttk.Frame(self.root, padding=10)
         bar.pack(fill="x")
         self.fields = {}
@@ -63,22 +67,26 @@ class Client:
         for tool in ["pen", "eraser", "line", "rectangle", "oval", "text"]:
             ttk.Radiobutton(tools, text=tool.title(), value=tool, variable=self.tool).pack(side="left", padx=3)
         ttk.Button(tools, text="Color", command=self.choose_color).pack(side="left", padx=5)
+        ttk.Label(tools, text="Width").pack(side="left", padx=(8, 4))
         ttk.Spinbox(tools, from_=1, to=40, width=3, textvariable=self.width).pack(side="left")
+        controls = ttk.Frame(self.root, padding=(10, 0, 10, 10))
+        controls.pack(fill="x")
         for label, kind in [("Undo", "undo"), ("Redo", "redo"), ("Clear", "clear"),
-                            ("Save checkpoint", "save"), ("Restore", "restore")]:
-            ttk.Button(tools, text=label, command=lambda k=kind: self.control(k)).pack(side="left", padx=2)
-        ttk.Button(tools, text="Export SVG", command=self.export).pack(side="left", padx=2)
+                            ("Save board", "save"), ("Load saved board", "restore")]:
+            ttk.Button(controls, text=label, command=lambda k=kind: self.control(k)).pack(side="left", padx=2)
+        ttk.Button(controls, text="Export SVG", command=self.export).pack(side="left", padx=2)
+        ttk.Label(controls, text="Clear, save and load: room host only").pack(side="right")
         content = ttk.Panedwindow(self.root, orient="horizontal")
         content.pack(fill="both", expand=True, padx=10)
         self.canvas = tk.Canvas(content, background="white", highlightthickness=1, highlightbackground="#ccd2d8")
         content.add(self.canvas, weight=4)
         side = ttk.Frame(content, width=260, padding=(10, 0))
         content.add(side, weight=1)
-        ttk.Label(side, text="Participants", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(side, text="In this room", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.people = tk.Listbox(side, height=6, relief="flat", font=("Segoe UI", 10))
         self.people.pack(fill="x", pady=5)
         ttk.Label(side, text="Group chat", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(10, 4))
-        self.chat = tk.Text(side, width=29, state="disabled", wrap="word", relief="flat", font=("Segoe UI", 10))
+        self.chat = tk.Text(side, width=29, height=12, state="disabled", wrap="word", relief="flat", font=("Segoe UI", 10))
         self.chat.pack(fill="both", expand=True)
         self.chat_entry = ttk.Entry(side)
         self.chat_entry.pack(fill="x", pady=5)
@@ -123,7 +131,7 @@ class Client:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 sock.sendall(pack(self.join))
                 sock.settimeout(1)
-                # A reader preserves partial frames across short idle periods.
+                # Only this thread reads the stream, including partially received frames.
                 sock.settimeout(20)
                 broken = threading.Event()
                 def reader(connection=sock):
@@ -197,7 +205,7 @@ class Client:
                 self.update_people(msg["members"])
                 self.redraw()
                 self.show_chat()
-                self.status.set(f'Connected | Room {self.join["room"].upper()} | revision {self.seq}')
+                self.status.set(f'Connected to {self.join["room"].upper()}  -  board update {self.seq}')
                 for pending in list(self.pending.values()):
                     self.send(pending)
             elif kind == "event":
@@ -223,7 +231,8 @@ class Client:
                 elif "ops" in msg:
                     self.ops = msg["ops"]
                 self.redraw()
-                self.status.set(f'Room {self.join["room"].upper()} | revision {self.seq} | {event}')
+                labels = {"save": "Board saved", "restore": "Saved board loaded", "clear": "Board cleared"}
+                self.status.set(f'{self.join["room"].upper()}  -  {labels.get(event, "Board update " + str(self.seq))}')
             elif kind == "ack":
                 self.pending.pop(msg.get("request"), None)
             elif kind == "presence":
@@ -357,11 +366,15 @@ class Client:
         if member:
             tag = "cursor_" + msg["id"]
             self.canvas.delete(tag)
-            x,y = self.screen(msg["point"])
-            self.canvas.create_text(x,y,text="+ " + member["name"], fill=member["color"], anchor="nw", tags=("cursor",tag))
+            x, y = self.screen(msg["point"])
+            self.canvas.create_text(
+                x, y, text="+ " + member["name"], fill=member["color"],
+                anchor="nw", tags=("cursor", tag)
+            )
 
     def control(self, kind):
-        if kind in ("clear", "restore") and not messagebox.askyesno(kind.title(), "Change the shared board for everyone?"):
+        prompts = {"clear": "Clear the board for everyone?", "restore": "Replace this board with the last saved board?"}
+        if kind in prompts and not messagebox.askyesno("Shared board", prompts[kind]):
             return
         self.submit(kind)
 
@@ -377,12 +390,14 @@ class Client:
             color = "white" if op["tool"] == "eraser" else op["color"]
             width = op["width"] * 10000 / max(1, self.canvas.winfo_width())
             points = op["points"]
-            x,y = points[0]
+            x, y = points[0]
             style = f'fill="none" stroke="{color}" stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round"'
             if op["tool"] == "text":
                 parts.append(f'<text x="{x}" y="{y}" dominant-baseline="hanging" font-size="{(12+op["width"])*16}" fill="{color}">{escape(op["text"])}</text>')
-            elif op["tool"] in ("rectangle", "oval") and len(points)>1:
-                xx,yy=points[-1]; left,top=min(x,xx),min(y,yy); w,h=abs(xx-x),abs(yy-y)
+            elif op["tool"] in ("rectangle", "oval") and len(points) > 1:
+                xx, yy = points[-1]
+                left, top = min(x, xx), min(y, yy)
+                w, h = abs(xx - x), abs(yy - y)
                 if op["tool"] == "rectangle":
                     parts.append(f'<rect x="{left}" y="{top}" width="{w}" height="{h}" {style}/>')
                 else:

@@ -1,38 +1,37 @@
-# Team explanation and final submission
+# Demo and viva notes
 
-The explanation video must be recorded by the actual team. Each person's name and
-face must be visible. Explain the presentation and source; the assignment does not
-require a live application demo inside this recording.
+## Demo order
 
-Before recording, add your team names and roll numbers to the presentation's first
-slide and report cover. Assign contributions according to what each person actually
-implemented, tested, reviewed or can explain. Do not claim work someone did not do.
+1. Start the server and connect two clients to the same room.
+2. Draw from both clients. Change colors, erase something and add text.
+3. Send a chat message. Check the sender name and time on both windows.
+4. Undo one client's stroke. The other client's work should stay.
+5. Save the board as host, clear it, then load the saved board.
+6. Try Clear from the other client. The server should reject it.
+7. Join another client. It should receive the existing board and chat.
+8. Disconnect one client, draw from the other, then reconnect it.
+9. Restart the server with the same sessions.json file and check recovery.
 
-Suggested speaking order (adapt to your group size):
+Keep the local network on and internet off for the lab evaluation.
 
-1. Requirements and architecture: explain why the server owns the board, the LAN
-   setup, room creation, host permissions and late joins. Open `server.py`.
-2. Protocol and concurrency: explain the four-byte length header, UTF-8 JSON, TCP
-   stream framing, the server lock, writer queues and sequence numbers. Open
-   `protocol.py`, `Peer` and `Server.operation`.
-3. Client and recovery: show the canvas tools, chat, normalized coordinates, Tk
-   event queue, reconnect snapshot, request IDs and identity token. Open `client.py`.
-4. Testing and demonstration: explain concurrent drawing, room isolation, invalid
-   message handling, checkpoints and restart recovery. Open `test_project.py`.
+## Code to explain
 
-Questions each member should be able to answer:
+| File | Points to cover |
+|---|---|
+| `server.py` | Rooms, the lock, outgoing queues, host checks and saving state |
+| `protocol.py` | JSON messages, length header and the receive loop |
+| `client.py` | Canvas events, the network thread, undo groups and reconnect |
+| `test_project.py` | Concurrent edits, duplicate requests and restart recovery |
 
-- Why doesn't one TCP `recv` equal one application message?
-- What happens when two users draw at the same time?
-- How can a client retry an operation without duplicating it?
-- What happens to another person's work when I undo?
-- How does a late participant receive the current board?
-- How does the server prevent edits from reaching another room?
+Be ready to explain why one recv() call may return only part of a message, why all
+clients need the same edit order, and how the server knows which user can clear a
+board. Also explain what happens if a connection drops just after sending an edit.
 
-For the in-person evaluation, all members must attend. Extract the submitted ZIP,
-start the server, connect at least two machines, draw concurrently, chat, undo/redo,
-join a third client, test checkpoint restore, disconnect/reconnect a client and test
-checkpoint recovery. Keep internet disabled while keeping the local network active.
+## Recording
 
-Add the recorded video to `release` and make the final ZIP with the source files,
-both EXEs, technical PDF and PPTX. Only one member needs to submit the archive.
+Divide the explanation based on each member's contribution. Each member's name and
+face must be visible in the
+recording. Use the slides and source code. The assignment does not require a live
+app demo in the video, but everyone must attend the in-person demo.
+
+Put the recording in `release` and update the submission ZIP. One member submits it.

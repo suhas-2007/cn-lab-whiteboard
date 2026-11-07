@@ -1,4 +1,4 @@
-"""Authoritative LAN whiteboard server. One ordered state per room."""
+"""TCP server for whiteboard rooms and saved boards."""
 import argparse
 import copy
 import hashlib
