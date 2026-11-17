@@ -1,4 +1,4 @@
-# LAN Whiteboard
+# LAN  Whiteboard
 
 Computer Networks lab project. One computer runs the TCP server. Other computers
 join a room and use the same drawing board and chat.
